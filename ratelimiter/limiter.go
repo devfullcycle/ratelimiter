@@ -1,7 +1,6 @@
 package ratelimiter
 
 import (
-	"sync"
 	"time"
 )
 
@@ -120,7 +119,5 @@ func (rl *RateLimiter) Allow(key string) (Response, error) {
 
 // Reset resets the rate limit for a given key
 func (rl *RateLimiter) Reset(key string) error {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
 	return rl.storage.Reset(key)
 }
