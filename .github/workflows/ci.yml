@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run tests
+        run: |
+          docker compose -f docker-compose.ci.yaml up -d
+          docker compose -f docker-compose.ci.yaml exec -T app go test ./... -v -race
+      
+      - name: Start HTTP server for load testing
+        run: |
+          docker compose -f docker-compose.ci.yaml exec -T app sh -c "cd /app && go run examples/memory/memory.go &"
+          sleep 5 # Wait for server to start
+      
+      - name: Run HTTP load tests
+        run: |
+          # Test normal load (should pass)
+          docker compose -f docker-compose.ci.yaml exec -T app hey -n 80 -c 10 http://localhost:8080/
+          
+          # Test rate limiting (should block after 100 requests)
+          BLOCKED_REQS=$(docker compose -f docker-compose.ci.yaml exec -T app hey -n 150 -c 50 http://localhost:8080/ | grep "429 Too Many Requests" | wc -l)
+          if [ "$BLOCKED_REQS" -eq 0 ]; then
+            echo "Rate limiting failed - no requests were blocked"
+            exit 1
+          fi
+      
+      - name: Start gRPC server for load testing
+        run: |
+          docker compose -f docker-compose.ci.yaml exec -T app sh -c "cd /app && go run examples/grpc/server.go &"
+          sleep 5 # Wait for server to start
+      
+      - name: Run gRPC load tests
+        run: |
+          # Test normal load (should pass)
+          docker compose -f docker-compose.ci.yaml exec -T app ghz \
+            --insecure \
+            --proto examples/grpc/ratelimiter.proto \
+            --call ratelimiter.RateLimiter.Allow \
+            --data '{"client_id":"test-client"}' \
+            -n 80 -c 10 \
+            localhost:9090
+          
+          # Test rate limiting (should block after 100 requests)
+          BLOCKED_REQS=$(docker compose -f docker-compose.ci.yaml exec -T app ghz \
+            --insecure \
+            --proto examples/grpc/ratelimiter.proto \
+            --call ratelimiter.RateLimiter.Allow \
+            --data '{"client_id":"test-client"}' \
+            -n 150 -c 50 \
+            localhost:9090 | grep "Code: ResourceExhausted" | wc -l)
+          if [ "$BLOCKED_REQS" -eq 0 ]; then
+            echo "gRPC rate limiting failed - no requests were blocked"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.ci.yaml down

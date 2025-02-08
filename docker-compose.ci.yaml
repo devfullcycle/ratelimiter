@@ -4,4 +4,10 @@ services:
     working_dir: /app
     ports:
       - "8080:8080"
+      - "9090:9090" # For future gRPC support
+    volumes:
+      - .:/app
+    environment:
+      - GO_ENV=test
+      - CGO_ENABLED=0
     # No bind mount in CI to ensure clean environment
