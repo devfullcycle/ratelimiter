@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+    working_dir: /app
+    ports:
+      - "8080:8080"
+    # No bind mount in CI to ensure clean environment
