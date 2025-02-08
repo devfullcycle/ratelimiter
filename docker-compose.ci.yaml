@@ -9,5 +9,5 @@ services:
       - .:/app
     environment:
       - GO_ENV=test
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     # No bind mount in CI to ensure clean environment
