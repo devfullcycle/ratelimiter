@@ -59,6 +59,14 @@ func (s *MemoryStorage) IncrementRequests(key string, now time.Time) (int, error
 func (s *MemoryStorage) GetRequests(key string) (int, error) {
 	if value, ok := s.requests.Load(key); ok {
 		window := value.(*requestWindow)
+		windowStart := window.startTime.Load().(time.Time)
+		
+		// Check if window needs reset
+		if time.Since(windowStart) >= time.Minute {
+			atomic.StoreInt64(&window.count, 0)
+			window.startTime.Store(time.Now())
+			return 0, nil
+		}
 		return int(atomic.LoadInt64(&window.count)), nil
 	}
 	return 0, nil
