@@ -1,8 +1,27 @@
 services:
+  redis:
+    image: redis:7.2
+    ports:
+      - "6379:6379"
+    networks:
+      - ratelimiter
+
   app:
     build: .
     volumes:
       - .:/app
-    network_mode: "host"
     working_dir: /app
     tty: true
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+    depends_on:
+      - redis
+    networks:
+      - ratelimiter
+
+networks:
+  ratelimiter:
+    driver: bridge
