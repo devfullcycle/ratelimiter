@@ -98,6 +98,54 @@ Retry-After: 60
 }
 ```
 
+## Storage Backends
+
+### Memory Storage (Default)
+The default memory storage is suitable for single-instance deployments. See the Quick Start section for usage.
+
+### Redis Storage
+For distributed environments, Redis storage backend is available. To use Redis:
+
+1. Configure Redis environment variables:
+```bash
+REDIS_HOST=localhost    # Redis server hostname
+REDIS_PORT=6379        # Redis server port
+REDIS_PASSWORD=        # Optional Redis password
+REDIS_DB=0            # Redis database number
+```
+
+2. Example code:
+```go
+package main
+
+import (
+    "github.com/devfullcycle/ratelimiter/middleware"
+    "github.com/devfullcycle/ratelimiter/ratelimiter"
+    "github.com/devfullcycle/ratelimiter/storage"
+)
+
+func main() {
+    // Initialize Redis storage
+    cfg := storage.DefaultRedisConfig()
+    client := storage.NewRedisClient(cfg)
+    store := storage.NewRedisStorage(client)
+
+    // Create rate limiter with Redis storage
+    limiter := ratelimiter.New(store)
+    
+    // ... rest of your application setup
+}
+```
+
+3. Running with Docker Compose:
+```bash
+# Start Redis and the application
+docker compose up -d
+
+# Run the Redis example
+docker compose exec app sh -c "cd /app && go run examples/redis/redis.go"
+```
+
 ## Development and Testing
 
 ### Prerequisites
