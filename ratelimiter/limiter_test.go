@@ -7,7 +7,9 @@ import (
 )
 
 func TestRateLimiter(t *testing.T) {
-	storage := &mockStorage{}
+	storage := &mockStorage{
+		mu: &sync.Mutex{},
+	}
 	limiter := New(storage)
 
 	// Test successful request

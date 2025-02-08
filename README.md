@@ -149,6 +149,25 @@ The rate limiter follows a modular design with three main components:
    - Structured logging with slog
    - Standard error responses
 
+## Continuous Integration
+
+The project uses GitHub Actions for CI/CD with the following checks:
+
+1. Unit Tests
+   - All tests are run with race detection enabled
+   - Tests must pass before merging
+
+2. Load Testing
+   - HTTP endpoints tested with hey tool
+   - gRPC endpoints tested with ghz tool
+   - Verifies rate limiting behavior under load
+   - Tests both normal operation and rate limit enforcement
+
+3. Integration Tests
+   - Tests run in containers via docker-compose
+   - Both HTTP and gRPC implementations tested
+   - Validates end-to-end functionality
+
 ## License
 
 MIT License
