@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	pb "github.com/devfullcycle/ratelimiter/examples/grpc"
+	pb "github.com/devfullcycle/ratelimiter/proto"
 	"github.com/devfullcycle/ratelimiter/middleware"
 	"github.com/devfullcycle/ratelimiter/ratelimiter"
 	"github.com/devfullcycle/ratelimiter/storage"

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package ratelimiter;
 
-option go_package = "github.com/devfullcycle/ratelimiter/examples/grpc";
+option go_package = "github.com/devfullcycle/ratelimiter/proto";
 
 service RateLimiter {
   rpc Allow (AllowRequest) returns (AllowResponse) {}
