@@ -92,8 +92,8 @@ func (rl *RateLimiter) Allow(key string) (Response, error) {
 		return Response{}, err
 	}
 
-	// Allow exactly MaxRequests before blocking
-	if count <= rl.opts.MaxRequests {
+	// Allow requests until MaxRequests is reached
+	if count < rl.opts.MaxRequests {
 		return Response{
 			Allowed:      true,
 			RequestsLeft: rl.opts.MaxRequests - count,
