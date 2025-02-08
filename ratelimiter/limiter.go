@@ -1,7 +1,6 @@
 package ratelimiter
 
 import (
-	"sync"
 	"time"
 )
 
@@ -49,7 +48,6 @@ type Response struct {
 type RateLimiter struct {
 	opts    Options
 	storage Storage
-	mu      sync.RWMutex
 }
 
 // New creates a new RateLimiter with the given options
@@ -72,10 +70,7 @@ func New(storage Storage, opts ...Option) *RateLimiter {
 
 // Allow checks if a request is allowed for the given key
 func (rl *RateLimiter) Allow(key string) (Response, error) {
-	rl.mu.RLock()
-	defer rl.mu.RUnlock()
-
-	// Check if key is blocked
+	// Check if key is blocked first
 	blocked, retryAfter, err := rl.storage.IsBlocked(key)
 	if err != nil {
 		return Response{}, err
@@ -91,31 +86,32 @@ func (rl *RateLimiter) Allow(key string) (Response, error) {
 		}, nil
 	}
 
-	// Increment request count
+	// Increment request count atomically
 	count, err := rl.storage.IncrementRequests(key, time.Now())
 	if err != nil {
 		return Response{}, err
 	}
 
-	// Check if limit exceeded
-	if count > rl.opts.MaxRequests {
-		blockUntil := time.Now().Add(rl.opts.BlockDuration)
-		if err := rl.storage.Block(key, blockUntil); err != nil {
-			return Response{}, err
-		}
-
+	// Allow exactly MaxRequests before blocking
+	if count <= rl.opts.MaxRequests {
 		return Response{
-			Allowed:      false,
-			RetryAfter:   blockUntil,
-			RequestsLeft: 0,
+			Allowed:      true,
+			RequestsLeft: rl.opts.MaxRequests - count,
 			RequestsMade: count,
 			Limit:        rl.opts.MaxRequests,
 		}, nil
 	}
 
+	// Block only after MaxRequests exceeded
+	blockUntil := time.Now().Add(rl.opts.BlockDuration)
+	if err := rl.storage.Block(key, blockUntil); err != nil {
+		return Response{}, err
+	}
+
 	return Response{
-		Allowed:      true,
-		RequestsLeft: rl.opts.MaxRequests - count,
+		Allowed:      false,
+		RetryAfter:   blockUntil,
+		RequestsLeft: 0,
 		RequestsMade: count,
 		Limit:        rl.opts.MaxRequests,
 	}, nil
@@ -123,7 +119,5 @@ func (rl *RateLimiter) Allow(key string) (Response, error) {
 
 // Reset resets the rate limit for a given key
 func (rl *RateLimiter) Reset(key string) error {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
 	return rl.storage.Reset(key)
 }

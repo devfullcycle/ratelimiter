@@ -2,12 +2,13 @@ package storage
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type requestWindow struct {
-	count     int
-	startTime time.Time
+	count     int64
+	startTime atomic.Value // stores time.Time
 }
 
 type blockInfo struct {
@@ -16,81 +17,75 @@ type blockInfo struct {
 
 // MemoryStorage implements rate limiting storage in memory
 type MemoryStorage struct {
-	requests map[string]requestWindow
-	blocks   map[string]blockInfo
-	mu       sync.RWMutex
+	requests sync.Map
+	blocks   sync.Map
 }
 
 // NewMemoryStorage creates a new memory-based storage
 func NewMemoryStorage() *MemoryStorage {
-	return &MemoryStorage{
-		requests: make(map[string]requestWindow),
-		blocks:   make(map[string]blockInfo),
-	}
+	return &MemoryStorage{}
 }
 
 // IncrementRequests increments the request count for a key
 func (s *MemoryStorage) IncrementRequests(key string, now time.Time) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Load or initialize window
+	value, loaded := s.requests.LoadOrStore(key, &requestWindow{
+		count: 0,
+	})
+	window := value.(*requestWindow)
 
-	window, exists := s.requests[key]
-	if !exists || now.Sub(window.startTime) >= time.Minute {
-		// Start new window
-		s.requests[key] = requestWindow{
-			count:     1,
-			startTime: now,
-		}
-		return 1, nil
+	// Initialize startTime if new window
+	if !loaded {
+		window.startTime.Store(now)
 	}
 
-	// Increment existing window
-	window.count++
-	s.requests[key] = window
-	return window.count, nil
+	// Get current window start time
+	windowStart := window.startTime.Load().(time.Time)
+
+	// Check if window needs reset
+	if now.Sub(windowStart) >= time.Minute {
+		// Try to reset window atomically
+		if atomic.CompareAndSwapInt64(&window.count, atomic.LoadInt64(&window.count), 0) {
+			window.startTime.Store(now)
+		}
+	}
+
+	// Increment and get count atomically
+	count := atomic.AddInt64(&window.count, 1)
+	return int(count), nil
 }
 
 // GetRequests returns the current request count for a key
 func (s *MemoryStorage) GetRequests(key string) (int, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if window, exists := s.requests[key]; exists {
-		return window.count, nil
+	if value, ok := s.requests.Load(key); ok {
+		window := value.(*requestWindow)
+		return int(atomic.LoadInt64(&window.count)), nil
 	}
 	return 0, nil
 }
 
 // IsBlocked checks if a key is blocked
 func (s *MemoryStorage) IsBlocked(key string) (bool, time.Time, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if block, exists := s.blocks[key]; exists {
+	if value, ok := s.blocks.Load(key); ok {
+		block := value.(blockInfo)
 		if time.Now().Before(block.until) {
 			return true, block.until, nil
 		}
 		// Block expired, clean up
-		delete(s.blocks, key)
+		s.blocks.Delete(key)
 	}
 	return false, time.Time{}, nil
 }
 
 // Block marks a key as blocked until the specified time
 func (s *MemoryStorage) Block(key string, until time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.blocks[key] = blockInfo{until: until}
+	s.blocks.Store(key, blockInfo{until: until})
 	return nil
 }
 
 // Reset resets all rate limit data for a key
 func (s *MemoryStorage) Reset(key string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.requests, key)
-	delete(s.blocks, key)
+	s.requests.Delete(key)
+	s.blocks.Delete(key)
 	return nil
 }
