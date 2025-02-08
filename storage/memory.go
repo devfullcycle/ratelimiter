@@ -50,19 +50,17 @@ func (s *MemoryStorage) IncrementRequests(key string, now time.Time) (int, error
 		}
 	}
 
-	// Get current count
-	currentCount := atomic.LoadInt64(&window.count)
-	if currentCount >= 100 {
-		return int(currentCount), nil
-	}
+	// Try to increment atomically with retries
+	for {
+		currentCount := atomic.LoadInt64(&window.count)
+		if currentCount >= 100 {
+			return int(currentCount), nil
+		}
 
-	// Try to increment atomically only if under limit
-	if atomic.CompareAndSwapInt64(&window.count, currentCount, currentCount+1) {
-		return int(currentCount + 1), nil
+		if atomic.CompareAndSwapInt64(&window.count, currentCount, currentCount+1) {
+			return int(currentCount + 1), nil
+		}
 	}
-
-	// If CAS failed, return current count
-	return int(atomic.LoadInt64(&window.count)), nil
 }
 
 // GetRequests returns the current request count for a key
