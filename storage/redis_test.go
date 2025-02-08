@@ -7,25 +7,63 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func setupRedisClient(t *testing.T) *redis.Client {
+func setupRedisContainer(t *testing.T) (testcontainers.Container, *redis.Client) {
+	ctx := context.Background()
+	
+	// Container request
+	req := testcontainers.ContainerRequest{
+		Image:        "redis:7.2",
+		ExposedPorts: []string{"6379/tcp"},
+		WaitingFor:   wait.ForLog("Ready to accept connections"),
+	}
+
+	// Start container
+	redisC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:         true,
+	})
+	if err != nil {
+		t.Fatalf("failed to start container: %s", err)
+	}
+
+	// Get mapped port
+	mappedPort, err := redisC.MappedPort(ctx, "6379")
+	if err != nil {
+		t.Fatalf("failed to get container external port: %s", err)
+	}
+
+	// Get host
+	host, err := redisC.Host(ctx)
+	if err != nil {
+		t.Fatalf("failed to get container host: %s", err)
+	}
+
+	// Create Redis client
 	client := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: fmt.Sprintf("%s:%s", host, mappedPort.Port()),
 	})
 
 	// Test connection
-	ctx := context.Background()
 	if err := client.Ping(ctx).Err(); err != nil {
 		t.Fatalf("failed to connect to Redis: %s", err)
 	}
 
-	return client
+	return redisC, client
 }
 
 func TestRedisStorage(t *testing.T) {
-	client := setupRedisClient(t)
-	defer client.Close()
+	t.Parallel()
+	redisC, client := setupRedisContainer(t)
+	defer func() {
+		client.Close()
+		if err := redisC.Terminate(context.Background()); err != nil {
+			t.Fatalf("failed to terminate container: %s", err)
+		}
+	}()
 
 	// Clean up any existing data
 	ctx := context.Background()
@@ -86,8 +124,14 @@ func TestRedisStorage(t *testing.T) {
 }
 
 func TestRedisStorageExpiration(t *testing.T) {
-	client := setupRedisClient(t)
-	defer client.Close()
+	t.Parallel()
+	redisC, client := setupRedisContainer(t)
+	defer func() {
+		client.Close()
+		if err := redisC.Terminate(context.Background()); err != nil {
+			t.Fatalf("failed to terminate container: %s", err)
+		}
+	}()
 
 	// Clean up any existing data
 	ctx := context.Background()
