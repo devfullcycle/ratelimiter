@@ -4,7 +4,6 @@ services:
     working_dir: /app
     ports:
       - "8080:8080"
-      - "9090:9090" # For future gRPC support
     volumes:
       - .:/app
     environment:
