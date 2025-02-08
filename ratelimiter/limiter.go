@@ -86,14 +86,19 @@ func (rl *RateLimiter) Allow(key string) (Response, error) {
 		}, nil
 	}
 
-	// Increment request count atomically
-	count, err := rl.storage.IncrementRequests(key, time.Now())
+	// Get current count first
+	count, err := rl.storage.GetRequests(key)
 	if err != nil {
 		return Response{}, err
 	}
 
 	// Allow requests until MaxRequests is reached
 	if count < rl.opts.MaxRequests {
+		// Increment only if we're under the limit
+		count, err = rl.storage.IncrementRequests(key, time.Now())
+		if err != nil {
+			return Response{}, err
+		}
 		return Response{
 			Allowed:      true,
 			RequestsLeft: rl.opts.MaxRequests - count,
