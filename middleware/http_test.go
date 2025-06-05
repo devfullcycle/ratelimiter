@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -52,6 +53,37 @@ func TestRateLimitMiddleware(t *testing.T) {
 	}
 }
 
+func TestRetryAfterHeaderNonNegative(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	storage := &mockPastStorage{}
+	limiter := ratelimiter.New(storage)
+	middleware := NewRateLimitMiddleware(limiter, logger)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// exceed limit so middleware attempts to return Retry-After header
+	storage.count = 101
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	middleware.Handler(handler).ServeHTTP(rec, req)
+
+	hdr := rec.Header().Get("Retry-After")
+	if hdr == "" {
+		t.Fatalf("expected Retry-After header to be set")
+	}
+
+	val, err := strconv.Atoi(hdr)
+	if err != nil {
+		t.Fatalf("invalid Retry-After header: %v", err)
+	}
+
+	if val < 0 {
+		t.Errorf("expected Retry-After to be non-negative, got %d", val)
+	}
+}
+
 // Mock storage for testing
 type mockStorage struct {
 	count int
@@ -80,4 +112,16 @@ func (m *mockStorage) Block(key string, until time.Time) error {
 func (m *mockStorage) Reset(key string) error {
 	m.count = 0
 	return nil
+}
+
+// mockPastStorage returns a past Retry-After time when blocked
+type mockPastStorage struct {
+	mockStorage
+}
+
+func (m *mockPastStorage) IsBlocked(key string) (bool, time.Time, error) {
+	if m.count > 100 {
+		return true, time.Now().Add(-time.Minute), nil
+	}
+	return false, time.Time{}, nil
 }

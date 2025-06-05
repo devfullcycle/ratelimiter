@@ -3,6 +3,7 @@ package middleware
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -42,7 +43,7 @@ func (m *RateLimitMiddleware) Handler(next http.Handler) http.Handler {
 		// Check rate limit
 		resp, err := m.limiter.Allow(ip)
 		if err != nil {
-			m.logger.Error("rate limit check failed", 
+			m.logger.Error("rate limit check failed",
 				"error", err,
 				"ip", ip,
 			)
@@ -51,9 +52,9 @@ func (m *RateLimitMiddleware) Handler(next http.Handler) http.Handler {
 		}
 
 		if !resp.Allowed {
-			// Calculate retry after in seconds
-			retryAfterSecs := int(time.Until(resp.RetryAfter).Seconds())
-			
+			// Calculate retry after in seconds, rounding up and never negative
+			retryAfterSecs := int(math.Ceil(math.Max(0, time.Until(resp.RetryAfter).Seconds())))
+
 			// Set headers
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfterSecs))
@@ -94,7 +95,7 @@ func getClientIP(r *http.Request) string {
 			return ips.String()
 		}
 	}
-	
+
 	// Extract from RemoteAddr
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return ip
